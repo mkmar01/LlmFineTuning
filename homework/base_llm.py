@@ -48,8 +48,7 @@ class BaseLLM:
         output_text = self.tokenizer.decode(output_tokens[0], skip_special_tokens=True)
         return output_text
 
-    @overload
-    def batched_generate(
+    def _batched_generate_single(
         self, prompts: list[str], num_return_sequences: None = None, temperature: float = 0
     ) -> list[str]:
         """
@@ -74,8 +73,7 @@ class BaseLLM:
         )
         return outputs
 
-    @overload
-    def batched_generate(
+    def _batched_generate_multi(
         self, prompts: list[str], num_return_sequences: int, temperature: float = 0
     ) -> list[list[str]]:
         """
@@ -104,6 +102,12 @@ class BaseLLM:
             for i in range(len(prompts))
         ]
         return grouped_outputs
+
+    @overload
+    def batched_generate(self, prompts: list[str], num_return_sequences: None = None, temperature: float = 0) -> list[str]: ...
+    @overload
+    def batched_generate(self, prompts: list[str], num_return_sequences: int, temperature: float = 0) -> list[list[str]]: ...
+
 
     def batched_generate(
         self, prompts: list[str], num_return_sequences: int | None = None, temperature: float = 0
@@ -146,10 +150,10 @@ class BaseLLM:
                 )
                 for r in self.batched_generate(prompts[idx : idx + micro_batch_size], num_return_sequences, temperature)
             ]
-        if num_return_sequences is None:
-            return self.batched_generate(prompts, temperature=temperature)
+        elif num_return_sequences is None:
+            return self._batched_generate_single(prompts, temperature=temperature)
         else:
-            return self.batched_generate(prompts, num_return_sequences=num_return_sequences, temperature=temperature)
+            return self._batched_generate_multi(prompts, num_return_sequences=num_return_sequences, temperature=temperature)
 
     def answer(self, *questions) -> list[float]:
         """
