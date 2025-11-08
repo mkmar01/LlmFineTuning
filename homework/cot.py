@@ -4,65 +4,67 @@ from .base_llm import BaseLLM
 class CoTModel(BaseLLM):
     def format_prompt(self, question: str) -> str:
         """
-        Take a question and convert it into a chat template. The LLM will likely answer much
-        better if you provide a chat template. self.tokenizer.apply_chat_template can help here
+        Creates a concise chat dialogue that guides the model to reason step-by-step
+        and put the final answer inside <answer></answer> tags.
         """
+
         messages = [
-        {
+            {
             "role": "system",
-            "content": (
-                "You are a helpful assistant. Provide a short, high-level solution outline "
-                "(no inner chain-of-thought or scratch work). Then give the final result "
-                "enclosed in <answer></answer> tags. Keep the outline to 2–4 bullet points."
-            ),
-        },
-
-        # Example 1 — Unit conversion
-        {
-            "role": "user",
-            "content": "Convert 7.5 km to meters."
-        },
-        {
-            "role": "assistant",
-            "content": (
-                "• Use 1 km = 1000 m.\n"
-                "• Multiply 7.5 by 1000 to get meters.\n"
-                "Final: <answer>7500 m</answer>"
-            ),
-        },
-
-        # Example 2 — Solve a linear equation
-        {
-            "role": "user",
-            "content": "Solve for x: 3x + 5 = 20."
-        },
-        {
-            "role": "assistant",
-            "content": (
-                "• Subtract 5 from both sides.\n"
-                "• Divide the result by 3 to isolate x.\n"
-                "Final: <answer>5</answer>"
-            ),
-        },
-
-        # Example 3 — Percentage increase
-        {
-            "role": "user",
-            "content": "An item costs $80 and the price increases by 15%. What is the new price?"
-        },
-        {
-            "role": "assistant",
-            "content": (
-                    "• Compute the multiplier for a 15% increase: 1 + 0.15 = 1.15.\n"
-                    "• Multiply 80 by 1.15.\n"
-                    "Final: <answer>$92.00</answer>"
+                "content": (
+                    "You are a reasoning assistant that performs unit conversions step-by-step. "
+                    "Always show your reasoning briefly, then give the numeric answer inside "
+                    "<answer></answer> tags. Keep the reasoning concise."
                 ),
-        },
-        # Your actual question goes next as a new user message...
-        {
-            "role": "user",
-            "content": "{question.strip()}",
-        },
+            },
+
+            # Example 1
+            {
+                "role": "user",
+                "content": "Convert 2 hours to minutes."
+            },
+            {
+                "role": "assistant",
+                "content": (
+                    "• 1 hour = 60 minutes.\n"
+                    "• 2 × 60 = 120.\n"
+                    "<answer>120</answer>"
+                ),
+            },
+
+            # Example 2
+            {
+                "role": "user",
+                "content": "How many grams are there in 5 kilograms?"
+            },
+            {
+                "role": "assistant",
+                "content": (
+                    "• 1 kilogram = 1000 grams.\n"
+                    "• 5 × 1000 = 5000.\n"
+                    "<answer>5000</answer>"
+                ),
+            },
+
+            # Example 3
+            {
+                "role": "user",
+                "content": "Convert 3 miles to feet."
+            },
+            {
+                "role": "assistant",
+                "content": (
+                    "• 1 mile = 5280 feet.\n"
+                    "• 3 × 5280 = 15840.\n"
+                    "<answer>15840</answer>"
+                ),
+            },
+
+            # --- Actual question ---
+            {
+                "role": "user",
+                "content": question.strip(),
+            },
         ]
 
         formatted = self.tokenizer.apply_chat_template(
@@ -71,8 +73,10 @@ class CoTModel(BaseLLM):
             add_generation_prompt=True,
         )
 
-        print("Formatted prompt:", formatted)
+        # Optional: inspect structure
+        # print("Formatted prompt:\n", formatted)
         return formatted
+
 
 def load() -> CoTModel:
     return CoTModel()
@@ -85,7 +89,6 @@ def test_model():
     model = CoTModel()
     benchmark_result = benchmark(model, testset, 100)
     print(f"{benchmark_result.accuracy=}  {benchmark_result.answer_rate=}")
-
 
 if __name__ == "__main__":
     from fire import Fire
