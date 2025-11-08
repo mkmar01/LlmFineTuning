@@ -7,9 +7,26 @@ class CoTModel(BaseLLM):
         Take a question and convert it into a chat template. The LLM will likely answer much
         better if you provide a chat template. self.tokenizer.apply_chat_template can help here
         """
+        messages = [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that answers questions step-by-step "
+                "and encloses the final numeric answer in <answer></answer> tags."
+            },
+            {
+                "role": "user",
+                "content": f"Let's think step-by-step and give a concise answer: {question}",
+            },
+        ]
 
-        raise NotImplementedError()
+        formatted = self.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
 
+        print("Formatted prompt:", formatted)
+        return formatted
 
 def load() -> CoTModel:
     return CoTModel()
