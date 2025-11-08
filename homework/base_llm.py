@@ -90,7 +90,7 @@ class BaseLLM:
             "top_p": 0.9,
             "do_sample": temperature > 0,
             "eos_token_id": self.tokenizer.eos_token_id,
-            "num_return_sequences": num_return_sequences or 1,
+            "num_return_sequences": num_return_sequences,
         }
         output_tokens = self.model.generate(**inputs, **gen_kwargs)
         # Calculate the length of input ids for each prompt to slice the outputs correctly
