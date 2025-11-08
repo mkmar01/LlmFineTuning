@@ -43,7 +43,10 @@ class BaseLLM:
         - decode the outputs with self.tokenizer.decode
 
         """
-        return self.batched_generate([prompt])[0]
+        prompt_tokens = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        output_tokens = self.model.generate(**prompt_tokens, max_new_tokens=50, temperature=0.2, top_p=0.9, do_sample=True)
+        output_text = self.tokenizer.decode(output_tokens[0], skip_special_tokens=True)
+        return output_text
 
     @overload
     def batched_generate(
@@ -53,6 +56,23 @@ class BaseLLM:
         Batched version of `generate` method.
         This version returns a single generation for each prompt.
         """
+        self.tokenizer.padding_side = "left"
+        inputs = self.tokenizer(prompts, return_tensors="pt", padding=True).to(self.device)
+        gen_kwargs = {
+            "max_new_tokens": 50,
+            "temperature": temperature,
+            "top_p": 0.9,
+            "do_sample": temperature > 0,
+            "eos_token_id": self.tokenizer.eos_token_id,
+            "num_return_sequences": 1,
+        }
+        output_tokens = self.model.generate(**inputs, **gen_kwargs)
+        # Calculate the length of input ids for each prompt to slice the outputs correctly
+        input_lengths = inputs["input_ids"].shape[1]
+        outputs = self.tokenizer.batch_decode(
+            output_tokens[:, input_lengths :], skip_special_tokens=True
+        )
+        return outputs
 
     @overload
     def batched_generate(
@@ -62,6 +82,28 @@ class BaseLLM:
         Batched version of `generate` method.
         This version returns a list of generation for each prompt.
         """
+        self.tokenizer.padding_side = "left"
+        inputs = self.tokenizer(prompts, return_tensors="pt", padding=True).to(self.device)
+        gen_kwargs = {
+            "max_new_tokens": 50,
+            "temperature": temperature,
+            "top_p": 0.9,
+            "do_sample": temperature > 0,
+            "eos_token_id": self.tokenizer.eos_token_id,
+            "num_return_sequences": num_return_sequences or 1,
+        }
+        output_tokens = self.model.generate(**inputs, **gen_kwargs)
+        # Calculate the length of input ids for each prompt to slice the outputs correctly
+        input_lengths = inputs["input_ids"].shape[1]
+        outputs = self.tokenizer.batch_decode(
+            output_tokens[:, input_lengths :], skip_special_tokens=True
+        )
+        # Group the outputs into lists for each prompt
+        grouped_outputs = [
+            outputs[i * num_return_sequences : (i + 1) * num_return_sequences]
+            for i in range(len(prompts))
+        ]
+        return grouped_outputs
 
     def batched_generate(
         self, prompts: list[str], num_return_sequences: int | None = None, temperature: float = 0
@@ -104,8 +146,10 @@ class BaseLLM:
                 )
                 for r in self.batched_generate(prompts[idx : idx + micro_batch_size], num_return_sequences, temperature)
             ]
-
-        raise NotImplementedError()
+        if num_return_sequences is None:
+            return self.batched_generate(prompts, temperature=temperature)
+        else:
+            return self.batched_generate(prompts, num_return_sequences=num_return_sequences, temperature=temperature)
 
     def answer(self, *questions) -> list[float]:
         """
