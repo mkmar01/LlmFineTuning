@@ -43,10 +43,7 @@ class BaseLLM:
         - decode the outputs with self.tokenizer.decode
 
         """
-        prompt_tokens = self.tokenizer(prompt, return_tensors="pt").to(self.device)
-        output_tokens = self.model.generate(**prompt_tokens, max_new_tokens=50, temperature=0.2, top_p=0.9, do_sample=True)
-        output_text = self.tokenizer.decode(output_tokens[0], skip_special_tokens=True)
-        return output_text
+        return self._batched_generate_single([prompt], temperature=0.1)[0]
 
     def _batched_generate_single(
         self, prompts: list[str], num_return_sequences: None = None, temperature: float = 0
