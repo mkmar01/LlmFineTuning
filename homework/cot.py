@@ -8,15 +8,61 @@ class CoTModel(BaseLLM):
         better if you provide a chat template. self.tokenizer.apply_chat_template can help here
         """
         messages = [
-            {
-                "role": "system",
-                "content": "You are a helpful assistant that answers questions step-by-step "
-                "and encloses the final numeric answer in <answer></answer> tags."
-            },
-            {
-                "role": "user",
-                "content": f"Let's think step-by-step and give a concise answer: {question}",
-            },
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful assistant. Provide a short, high-level solution outline "
+                "(no inner chain-of-thought or scratch work). Then give the final result "
+                "enclosed in <answer></answer> tags. Keep the outline to 2–4 bullet points."
+            ),
+        },
+
+        # Example 1 — Unit conversion
+        {
+            "role": "user",
+            "content": "Convert 7.5 km to meters."
+        },
+        {
+            "role": "assistant",
+            "content": (
+                "• Use 1 km = 1000 m.\n"
+                "• Multiply 7.5 by 1000 to get meters.\n"
+                "Final: <answer>7500 m</answer>"
+            ),
+        },
+
+        # Example 2 — Solve a linear equation
+        {
+            "role": "user",
+            "content": "Solve for x: 3x + 5 = 20."
+        },
+        {
+            "role": "assistant",
+            "content": (
+                "• Subtract 5 from both sides.\n"
+                "• Divide the result by 3 to isolate x.\n"
+                "Final: <answer>5</answer>"
+            ),
+        },
+
+        # Example 3 — Percentage increase
+        {
+            "role": "user",
+            "content": "An item costs $80 and the price increases by 15%. What is the new price?"
+        },
+        {
+            "role": "assistant",
+            "content": (
+                    "• Compute the multiplier for a 15% increase: 1 + 0.15 = 1.15.\n"
+                    "• Multiply 80 by 1.15.\n"
+                    "Final: <answer>$92.00</answer>"
+                ),
+        },
+        # Your actual question goes next as a new user message...
+        {
+            "role": "user",
+            "content": "{question.strip()}",
+        },
         ]
 
         formatted = self.tokenizer.apply_chat_template(
