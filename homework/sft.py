@@ -1,36 +1,25 @@
 from .base_llm import BaseLLM
 from .data import Dataset, benchmark
 from peft import get_peft_model, LoraConfig, TaskType, PeftModel
+from transformers import Trainer, TrainingArguments
 
 
 def load() -> BaseLLM:
+    """Load fine-tuned LoRA adapter for evaluation."""
     from pathlib import Path
 
-    model_name = "sft_model"
-    model_path = Path(__file__).parent / model_name
+    model_path = Path(__file__).parent / "sft_model"
 
     llm = BaseLLM()
     llm.model = PeftModel.from_pretrained(llm.model, model_path).to(llm.device)
-    
-    # print(llm.model.layers[0].self_attn.q_proj.weight.shape)
-    # print(llm.model.layers[0].self_attn.k_proj.weight.shape)
-    # print(llm.model.layers[0].self_attn.v_proj.weight.shape)
-    # print(llm.model.layers[0].mlp.up_proj.weight.shape)
-    # print(llm.model.layers[0].mlp.down_proj.weight.shape)
-
-    llm.model = llm.model.get_peft_config()
     llm.model.eval()
-
     return llm
 
 
 def tokenize(tokenizer, question: str, answer: str):
     """
-    Tokenize a data element.
-    We first append the <EOS> token to the question / answer pair.
-    Then we tokenize and construct the ground truth `labels`.
-    `labels[i] == -100` for the question or masked out parts, since we only want to supervise
-    the answer.
+    Tokenize a (question, answer) pair.
+    Only supervise on the answer portion, masking the question with -100.
     """
     full_text = f"{question} {answer}{tokenizer.eos_token}"
 
@@ -41,7 +30,7 @@ def tokenize(tokenizer, question: str, answer: str):
     input_ids = full["input_ids"]
     question_len = len(tokenizer(question)["input_ids"])
 
-    # Create labels: mask out the prompt part
+    # Mask question part
     labels = [-100] * question_len + input_ids[question_len:]
 
     for i in range(len(labels)):
@@ -53,9 +42,7 @@ def tokenize(tokenizer, question: str, answer: str):
 
 
 def format_example(prompt: str, answer: str) -> dict[str, str]:
-    """
-    Construct a question / answer pair. Consider rounding the answer to make it easier for the LLM.
-    """
+    """Format each example with numeric answer in <answer></answer> tags."""
     rounded_answer = str(round(float(answer), 3))
     return {
         "question": prompt,
@@ -65,14 +52,6 @@ def format_example(prompt: str, answer: str) -> dict[str, str]:
 
 class TokenizedDataset:
     def __init__(self, tokenizer, data: Dataset, format_fn):
-        """
-        Use the
-        - BaseLLM.tokenizer
-        - Dataset
-        - format_fn which converts a data element into a dict with entries
-          - question: str
-          - answer: str
-        """
         self.format_fn = format_fn
         self.tokenizer = tokenizer
         self.data = data
@@ -81,54 +60,62 @@ class TokenizedDataset:
         return len(self.data)
 
     def __getitem__(self, idx):
-        formated_data = self.format_fn(*self.data[idx])
-        return tokenize(self.tokenizer, **formated_data)
+        formatted_data = self.format_fn(*self.data[idx])
+        return tokenize(self.tokenizer, **formatted_data)
 
 
-def train_model(
-    output_dir: str,
-    **kwargs,
-):
-    from .sft_trainer import SFTTrainer
-    from .data import Dataset
-    from .base_llm import BaseLLM
+def train_model(output_dir: str = "homework/sft_model", **kwargs):
+    """Fine-tune the model with LoRA adapters."""
     dataset = Dataset("train")
     llm = BaseLLM()
+
+    # Configure LoRA
     lora_cfg = LoraConfig(
-        r=8,                       # rank (adjust if model >20MB)
-        lora_alpha=32,             # ~4x rank
+        r=2,  # adjust if file size > 20MB
+        lora_alpha=10,
         target_modules="all-linear",
         bias="none",
         task_type=TaskType.CAUSAL_LM,
     )
+
     llm.model = get_peft_model(llm.model, lora_cfg)
     llm.model.enable_input_require_grads()
 
+    # Prepare tokenized dataset
     tokenized_dataset = TokenizedDataset(llm.tokenizer, dataset, format_example)
 
-    trainer = SFTTrainer(
-        model=llm.model,
-        tokenizer=llm.tokenizer,
-        train_dataset=tokenized_dataset,
-        gradient_checkpointing=True,
-        learning_rate=2e-4,
-        num_train_epochs=5,
-        per_device_train_batch_size=32,
+    # Training arguments
+    training_args = TrainingArguments(
         output_dir=output_dir,
         logging_dir=output_dir,
+        per_device_train_batch_size=32,
+        num_train_epochs=5,
+        gradient_checkpointing=True,
+        learning_rate=1e-3,
         report_to="tensorboard",
+        save_total_limit=1,
     )
-    
+
+    # Trainer
+    trainer = Trainer(
+        model=llm.model,
+        tokenizer=llm.tokenizer,
+        args=training_args,
+        train_dataset=tokenized_dataset,
+    )
+
+    # Train and save adapter
     trainer.train()
     trainer.save_model(output_dir)
+
+    # Evaluate
     test_model(output_dir)
 
 
-def test_model(ckpt_path: str):
+def test_model(ckpt_path: str = "homework/sft_model"):
+    """Evaluate the fine-tuned model on validation dataset."""
     testset = Dataset("valid")
     llm = BaseLLM()
-
-    # Load the model with LoRA adapters
     llm.model = PeftModel.from_pretrained(llm.model, ckpt_path).to(llm.device)
 
     benchmark_result = benchmark(llm, testset, 100)
